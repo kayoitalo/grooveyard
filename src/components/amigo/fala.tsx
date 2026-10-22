@@ -104,6 +104,9 @@ export function Resposta({
   href,
   download,
   submit = false,
+  primary = false,
+  expanded,
+  controls,
   children,
 }: {
   onClick?: () => void;
@@ -115,6 +118,9 @@ export function Resposta({
   download?: boolean;
   /** Envia o formulário em volta. */
   submit?: boolean;
+  primary?: boolean;
+  expanded?: boolean;
+  controls?: string;
   children: ReactNode;
 }) {
   const body = (
@@ -152,6 +158,9 @@ export function Resposta({
       onClick={onClick}
       disabled={disabled}
       aria-pressed={pressed}
+      aria-expanded={expanded}
+      aria-controls={controls}
+      data-primary={primary || undefined}
     >
       {body}
     </button>

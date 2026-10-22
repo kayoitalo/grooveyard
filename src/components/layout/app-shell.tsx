@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 import { SECTIONS, sectionFor } from "@/components/layout/sections";
 import styles from "./app-shell.module.css";
+import { LogoutButton } from "./logout-button";
 
 /**
  * O cabeçalho do app: o nome e as telas, em texto. A tela atual é a que
@@ -14,6 +15,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const current = sectionFor(pathname);
   const navRef = useRef<HTMLElement>(null);
+  const barRef = useRef<HTMLElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const measure = () => shellRef.current?.style.setProperty("--bar-h", `${bar.getBoundingClientRect().height}px`);
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    measure();
+    return () => observer.disconnect();
+  }, []);
 
   // no celular a fileira rola: a tela atual precisa estar à vista
   useEffect(() => {
@@ -23,8 +36,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [current.href]);
 
   return (
-    <div className={styles.shell}>
-      <header className={styles.bar}>
+    <div ref={shellRef} className={styles.shell}>
+      <header id="arcadium-header" ref={barRef} className={styles.bar}>
         <Link href="/overview" className={styles.wordmark} aria-label="Arcadium, voltar para a conversa">
           arcadium
         </Link>
@@ -40,6 +53,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </nav>
+        <LogoutButton />
       </header>
       <main className={styles.page}>{children}</main>
     </div>

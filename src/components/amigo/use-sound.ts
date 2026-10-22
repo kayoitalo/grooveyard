@@ -26,6 +26,9 @@ export function useSound() {
   const elements = useRef(new Map<string, HTMLAudioElement>());
   const timers = useRef<number[]>([]);
   const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const playbackRun = useRef(0);
   const [step, setStep] = useState(0);
   /** A prévia que está soando agora: quem mostra "para aí" numa lista precisa saber qual. */
   const [current, setCurrent] = useState<string | null>(null);
@@ -68,6 +71,9 @@ export function useSound() {
   );
 
   const stop = useCallback(() => {
+    playbackRun.current += 1;
+    setLoading(false);
+    setError(null);
     timers.current.forEach((timer) => window.clearTimeout(timer));
     timers.current = [];
     elements.current.forEach((audio) => {
@@ -82,16 +88,32 @@ export function useSound() {
   const play = useCallback(
     (steps: SoundStep[]) => {
       stop();
+      setError(null);
       if (steps.length === 0) return;
-      graph();
+      const token = playbackRun.current;
+      let queue: HTMLAudioElement[];
       // todas nascem já: o corte para a segunda tem que ser seco, sem espera de rede
-      const queue = steps.map((entry) => element(entry.url));
+      try {
+        graph();
+        queue = steps.map((entry) => element(entry.url));
+      } catch {
+        setError("Não consegui abrir a prévia. Tenta tocar de novo.");
+        return;
+      }
 
       const run = (index: number) => {
+        if (token !== playbackRun.current) return;
         queue[index - 1]?.pause();
         const audio = queue[index];
         audio.currentTime = 0;
-        void audio.play().catch(() => stop());
+        setLoading(true);
+        void audio.play().then(() => {
+          if (token === playbackRun.current) setLoading(false);
+        }).catch(() => {
+          if (token !== playbackRun.current) return;
+          stop();
+          setError("Não consegui tocar a prévia. Confere a conexão e tenta de novo.");
+        });
         setStep(index);
         setCurrent(steps[index].url);
         if (index < queue.length - 1) {
@@ -139,5 +161,5 @@ export function useSound() {
     [stop],
   );
 
-  return { playing, step, current, play, stop, toggle, read };
+  return { playing, loading, error, step, current, play, stop, toggle, read };
 }

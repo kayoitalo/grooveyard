@@ -33,16 +33,18 @@
   gap: clamp(14px, 2.2vw, 28px);
   margin-left: auto;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fio-2) transparent;
+  padding-bottom: 4px;
 }
 
 .nav::-webkit-scrollbar {
-  display: none;
+  height: 3px;
 }
 
 .link {
   flex-shrink: 0;
-  padding: 6px 0;
+  padding: 10px 2px;
   border-bottom: 1.5px solid transparent;
   font-size: 14px;
   font-variation-settings: "wdth" 96, "wght" 560;

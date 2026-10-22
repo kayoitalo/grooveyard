@@ -16,8 +16,18 @@
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   column-gap: clamp(28px, 6vw, 112px);
   align-items: center;
-  min-height: 78dvh;
-  padding: 8vh 0;
+  min-height: 60dvh;
+  padding: clamp(40px, 6vh, 72px) 0;
+}
+
+.block:first-child { min-height: 74dvh; }
+
+.position {
+  flex-basis: 100%;
+  margin: 0 0 2px;
+  color: var(--tinta-3);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .block[data-end="true"] {
@@ -258,6 +268,9 @@
     min-height: auto;
     padding: 7vh 0;
   }
+
+  .block:first-child { min-height: auto; }
+  .position { grid-column: 1 / -1; }
 
   .pair {
     padding-top: 92px;

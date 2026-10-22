@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { authorizeApi } from "@/lib/security/api-auth";
 import { prisma } from "@/lib/db/prisma";
 import { AIAnalysisService } from "@/modules/ai-analysis/application/ai-analysis-service";
 import { logAi } from "@/modules/ai-analysis/application/ai-log";
@@ -15,9 +16,11 @@ export const maxDuration = 180;
  * precisa de leitura nova, pede uma — só uma por visita — depois da
  * resposta, como o cron faz.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
   try {
-    const user = await prisma.user.findFirst({ select: { id: true } });
+    const user = await prisma.user.findUnique({ where: { id: access.userId }, select: { id: true } });
     if (!user) return NextResponse.json({ moments: [], writing: false, hasHistory: false });
 
     const { view, refresh } = await new ConversationService().load(user.id);

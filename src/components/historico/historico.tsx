@@ -1,5 +1,7 @@
 "use client";
 
+import { privateFetch } from "@/lib/http/private-fetch";
+
 import { useReducedMotion } from "framer-motion";
 import { ArrowUpRight, Pause, Play } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -65,6 +67,8 @@ export function Historico() {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [loadedQuery, setLoadedQuery] = useState("");
+  const [loadedPage, setLoadedPage] = useState(1);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const markRef = useRef<HTMLSpanElement>(null);
@@ -96,14 +100,17 @@ export function Historico() {
   useEffect(() => {
     const controller = new AbortController();
     setBusy(true);
+    setFailed(false);
     const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), search: query });
-    fetch(`/api/history?${params}`, { signal: controller.signal, cache: "no-store" })
+    privateFetch(`/api/history?${params}`, { signal: controller.signal, cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`history ${response.status}`);
         return response.json() as Promise<HistoryPayload>;
       })
       .then((payload) => {
         setData(payload);
+        setLoadedQuery(query);
+        setLoadedPage(page);
         setFailed(false);
       })
       .catch(() => {
@@ -161,13 +168,13 @@ export function Historico() {
   let headline: string;
   let narrative: string;
   let mark: string[] | undefined;
-  if (query && found === 0) {
-    headline = `Nada com “${query}”.`;
+  if (loadedQuery && found === 0) {
+    headline = `Nada com “${loadedQuery}”.`;
     narrative = "Tenta um pedaço do nome do artista, da faixa ou do disco.";
-  } else if (query) {
-    headline = `“${query}” aparece em ${plays(found)}.`;
+  } else if (loadedQuery) {
+    headline = `“${loadedQuery}” aparece em ${plays(found)}.`;
     narrative = peak === null ? "" : `O horário dessas é ${hourWords(peak)}.`;
-    mark = [query];
+    mark = [loadedQuery];
   } else {
     headline = peak === null ? "Tudo que tocou." : `Teu horário é ${hourWords(peak)}.`;
     narrative =
@@ -249,7 +256,7 @@ export function Historico() {
 
   if (!data) return <Aviso headline="Peraí, tô puxando teu histórico." />;
 
-  if (data.totalItems === 0 && !query) {
+  if (data.totalItems === 0 && !loadedQuery && !query) {
     return (
       <Aviso
         headline="Ainda não ouvi nada teu."
@@ -262,10 +269,33 @@ export function Historico() {
 
   return (
     <div ref={stageRef} className={styles.stage}>
+      <label className={styles.search}>
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="procura artista, faixa ou disco"
+          aria-label="Procurar no histórico"
+        />
+        {search && (
+          <button type="button" className={styles.clear} onClick={() => setSearch("")}>
+            limpar
+          </button>
+        )}
+      </label>
+
+      {busy && <p className={styles.update} role="status">Buscando… Os registros anteriores continuam aqui enquanto eu consulto.</p>}
+      {sound.error && <p className={styles.updateError} role="alert">{sound.error}</p>}
+      {failed && <div className={styles.updateError} role="alert">
+        <p>Não consegui atualizar a busca. Os resultados abaixo são da última consulta que deu certo{loadedQuery ? `: “${loadedQuery}”` : ""}.</p>
+        <Resposta onClick={() => setAttempt((current) => current + 1)}>tentar de novo</Resposta>
+      </div>}
+
+
       <div className={styles.top}>
         <Fala
           level={1}
-          window={query ? "procurando no que tocou" : "tudo que tocou, da mais recente pra trás"}
+          window={loadedQuery ? "procurando no que tocou" : "tudo que tocou, da mais recente pra trás"}
           headline={headline}
           narrative={narrative || null}
           markRef={markRef}
@@ -305,29 +335,18 @@ export function Historico() {
               ))}
             </div>
             <figcaption className={styles.quiet}>
-              {query ? "quando tocam as que você procurou" : "quando você ouve, hora a hora"}, no teu fuso
+              {loadedQuery ? "quando tocam as que você procurou" : "quando você ouve, hora a hora"}, no teu fuso
             </figcaption>
+            <details className={styles.hourDetails}>
+              <summary>ver audições por horário</summary>
+              <dl>{hours.map((value, hour) => <div key={hour}><dt>{hourWords(hour)}</dt><dd>{plays(value)}</dd></div>)}</dl>
+            </details>
           </figure>
         )}
       </div>
 
-      <label className={styles.search}>
-        <input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="procura artista, faixa ou disco"
-          aria-label="Procurar no histórico"
-        />
-        {search && (
-          <button type="button" className={styles.clear} onClick={() => setSearch("")}>
-            limpar
-          </button>
-        )}
-      </label>
-
       <div className={styles.log} aria-busy={busy}>
-        {days.length === 0 && query && <p className={styles.empty}>Nada por aqui com esse nome.</p>}
+        {days.length === 0 && loadedQuery && <p className={styles.empty}>Nada por aqui com esse nome.</p>}
         {days.map(([key, events]) => (
           <section key={key} aria-label={dayName(key, events[0].playedAt)}>
             <header className={styles.dayHead}>
@@ -381,15 +400,15 @@ export function Historico() {
       {data.totalPages > 1 && (
         <div className={styles.pages}>
           <span>
-            página {count(page)} de {count(data.totalPages)}
+            página {count(loadedPage)} de {count(data.totalPages)}
           </span>
           <Respostas inline label="Páginas">
-            <Resposta onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1}>
+            <Resposta onClick={() => setPage(Math.max(1, loadedPage - 1))} disabled={busy || failed || loadedPage <= 1}>
               mais recentes
             </Resposta>
             <Resposta
-              onClick={() => setPage((current) => Math.min(data.totalPages, current + 1))}
-              disabled={page >= data.totalPages}
+              onClick={() => setPage(Math.min(data.totalPages, loadedPage + 1))}
+              disabled={busy || failed || loadedPage >= data.totalPages}
             >
               mais antigas
             </Resposta>

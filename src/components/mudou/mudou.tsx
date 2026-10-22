@@ -164,6 +164,7 @@ export function Mudou({
           mark={citedItems.flatMap((item) => [genreLabel(item.genre), item.genre])}
         />
         <div className={styles.proof}>
+          <p className={styles.legend}><span className={styles.legendFrom} aria-hidden="true" /> antes <span className={styles.legendTo} aria-hidden="true" /> agora · participação na escuta com gênero conhecido</p>
           {group("ganhou espaço", shift.rising)}
           {group("perdeu espaço", shift.declining)}
           <p className={styles.quiet}>

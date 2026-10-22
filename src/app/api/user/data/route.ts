@@ -1,9 +1,14 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { prisma } from "@/lib/db/prisma";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
   try {
-    const user = await prisma.user.findFirst({
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
       include: {
         connections: true,
         listeningEvents: {
@@ -45,6 +50,7 @@ export async function GET() {
     return new NextResponse(JSON.stringify(exportPayload, null, 2), {
       headers: {
         "Content-Type": "application/json",
+        "Cache-Control": "private, no-store",
         "Content-Disposition": `attachment; filename="arcadium_export_${new Date().toISOString().slice(0, 10)}.json"`,
       },
     });
@@ -57,9 +63,12 @@ export async function GET() {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
   try {
-    const user = await prisma.user.findFirst();
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return NextResponse.json({ error: "No user account found to purge." }, { status: 404 });
     }
@@ -68,7 +77,7 @@ export async function DELETE() {
       where: { userId: user.id },
     });
 
-    await prisma.syncRun.deleteMany();
+    await prisma.syncRun.deleteMany({ where: { connection: { userId } } });
     await prisma.providerConnection.deleteMany({
       where: { userId: user.id },
     });

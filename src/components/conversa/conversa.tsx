@@ -356,6 +356,7 @@ export function Conversa({ moments: all }: { moments: ConversationMoment[] }) {
         const evidence = moment?.evidence ?? null;
         return (
           <section
+            id={`assunto-${index}`}
             key={moment?.key ?? "fim"}
             ref={refs("block")}
             data-index={index}
@@ -413,6 +414,11 @@ export function Conversa({ moments: all }: { moments: ConversationMoment[] }) {
       <PenLayer pen={{ ...pen, notes }} signal={signal} reduced={reduced} />
 
       <Respostas>
+        {sound.error && <p className={styles.position} role="alert">{sound.error}</p>}
+        <p className={styles.position} aria-live="polite" aria-atomic="true">
+          {atEnd ? "Fim da conversa" : `Assunto ${active + 1} de ${moments.length} · ${moments[active]?.window ?? ""}`}
+          {!atEnd && (steps.length > 0 ? " · prévia de 30s" : " · sem prévia neste assunto")}
+        </p>
         {atEnd ? (
           <>
             <Resposta onClick={() => go(0)} hint="↵">
@@ -424,12 +430,12 @@ export function Conversa({ moments: all }: { moments: ConversationMoment[] }) {
         ) : (
           <>
             <Resposta onClick={toggleSound} disabled={steps.length === 0 || activeDismissed} hint="T">
-              {sound.playing ? "para aí" : "toca aí"}
+              {sound.loading ? "carregando prévia…" : sound.playing ? "para aí" : "toca aí"}
             </Resposta>
-            <Resposta onClick={() => go(active + 1)} hint="→">
+            <Resposta onClick={() => go(active + 1)} hint="→" primary>
               e o que mais?
             </Resposta>
-            <Resposta onClick={toggleMore} disabled={!canExpand} hint="M">
+            <Resposta onClick={toggleMore} disabled={!canExpand} hint="M" expanded={expanded.includes(active)} controls={`assunto-${active}`}>
               {expanded.includes(active) ? "menos" : "me mostra mais"}
             </Resposta>
             <Resposta onClick={dismiss} hint="N">

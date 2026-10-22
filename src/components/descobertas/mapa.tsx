@@ -58,6 +58,7 @@ export function Mapa({
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
+    if (busy) return;
     const step = event.shiftKey ? 10 : 5;
     const moves: Record<string, [number, number]> = {
       ArrowLeft: [-step, 0],
@@ -89,6 +90,7 @@ export function Mapa({
         className={styles.pad}
         onKeyDown={onKeyDown}
         onPointerDown={(event) => {
+          if (busy) return;
           const point = read(event);
           if (!point) return;
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -106,6 +108,7 @@ export function Mapa({
           const point = read(event);
           if (point) onCommit(point.proximity, point.fame);
         }}
+        onPointerCancel={() => setDragging(false)}
       >
         <span className={styles.line} data-axis="x" style={{ left: `${proximity}%`, transition: glide }} />
         <span className={styles.line} data-axis="y" style={{ top: `${100 - fame}%`, transition: glide }} />

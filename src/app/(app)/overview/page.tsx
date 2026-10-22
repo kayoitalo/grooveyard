@@ -1,5 +1,7 @@
 "use client";
 
+import { privateFetch } from "@/lib/http/private-fetch";
+
 import { useEffect, useState } from "react";
 import { Aviso } from "@/components/amigo/aviso";
 import { Resposta } from "@/components/amigo/fala";
@@ -25,7 +27,7 @@ export default function ConversaPage() {
     let timer = 0;
     const load = async () => {
       try {
-        const response = await fetch("/api/conversation", { signal: controller.signal, cache: "no-store" });
+        const response = await privateFetch("/api/conversation", { signal: controller.signal, cache: "no-store" });
         if (!response.ok) throw new Error(`conversa ${response.status}`);
         const view = (await response.json()) as ConversationView;
         setState({ status: "ready", view });

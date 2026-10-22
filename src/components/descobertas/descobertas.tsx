@@ -1,7 +1,10 @@
 "use client";
 
+import { privateFetch } from "@/lib/http/private-fetch";
+
 import { useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Aviso } from "@/components/amigo/aviso";
 import { Capa, Fala, PenLayer, Resposta, Respostas } from "@/components/amigo/fala";
 import { band, type Point } from "@/components/amigo/gestures";
@@ -12,6 +15,8 @@ import { usePulse } from "@/components/amigo/use-pulse";
 import { useSound } from "@/components/amigo/use-sound";
 import { genreLabel } from "@/lib/format/genre";
 import { Mapa, type MapDot } from "./mapa";
+import { useSelection } from "./selection-provider";
+import { MAX_SELECTED_TRACKS, selectionKey } from "./selection";
 import styles from "./descobertas.module.css";
 
 interface Candidate {
@@ -86,6 +91,15 @@ export function Descobertas() {
   const [failed, setFailed] = useState(false);
   const [decided, setDecided] = useState<Record<string, Action>>({});
   const [exported, setExported] = useState<"running" | ExportResult | null>(null);
+  const [exportHidden, setExportHidden] = useState(false);
+  const modalOpen = Boolean(exported) && !exportHidden;
+  const [saving, setSaving] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const savingRef = useRef(false);
+  const exportRef = useRef(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const selection = useSelection();
+  const kept = selection.items;
   const requestRef = useRef(0);
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -96,11 +110,13 @@ export function Descobertas() {
   const signal = usePulse(stageRef, sound.playing, sound.read);
 
   const load = useCallback(async (nextProximity: number, nextFame: number) => {
+    if (savingRef.current) return;
     const token = ++requestRef.current;
     setBusy(true);
     setFailed(false);
+    setFeedbackError(null);
     try {
-      const response = await fetch("/api/recommendations", {
+      const response = await privateFetch("/api/recommendations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "BALANCED", context: "GENERAL", proximity: nextProximity, fame: nextFame }),
@@ -131,6 +147,7 @@ export function Descobertas() {
 
   const commit = useCallback(
     (nextProximity: number, nextFame: number) => {
+      if (savingRef.current) return;
       move(nextProximity, nextFame);
       void load(nextProximity, nextFame);
     },
@@ -146,20 +163,35 @@ export function Descobertas() {
   }, [current?.id, stop]);
 
   const decide = useCallback(
-    (action: Action) => {
-      if (!current) return;
+    async (action: Action) => {
+      if (!current || busy || savingRef.current || !selection.ready) return;
+      if ((action === "liked" || action === "saved") && selection.items.length >= MAX_SELECTED_TRACKS && !selection.items.some((item) => selectionKey(item) === selectionKey(current))) {
+        setFeedbackError("A lista está com 200 faixas. Leva pro Spotify ou remove uma antes de guardar mais.");
+        return;
+      }
+      savingRef.current = true;
+      setSaving(true);
+      setFeedbackError(null);
       stop();
-      setDecided((previous) => ({ ...previous, [current.id]: action }));
-      setIndex((value) => value + 1);
-      if (sessionId) {
-        void fetch(`/api/recommendations/${sessionId}/feedback`, {
+      try {
+        if (!sessionId) throw new Error("Não consegui identificar a busca. Tenta buscar de novo.");
+        const response = await privateFetch(`/api/recommendations/${sessionId}/feedback`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ itemId: current.id, type: FEEDBACK_API[action] }),
-        }).catch(() => undefined);
+        });
+        if (!response.ok) throw new Error("Não consegui guardar tua resposta. Tenta de novo; a faixa continua aqui.");
+        if (action === "liked" || action === "saved") selection.add({ id: current.id, trackName: current.trackName, artistName: current.artistName, action });
+        setDecided((previous) => ({ ...previous, [current.id]: action }));
+        setIndex((value) => value + 1);
+      } catch (cause) {
+        setFeedbackError(cause instanceof Error ? cause.message : "A conexão falhou. Tenta responder de novo.");
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
       }
     },
-    [current, sessionId, stop],
+    [current, sessionId, stop, busy, selection.add, selection.ready, selection.items],
   );
 
   const toggleSound = useCallback(() => {
@@ -167,7 +199,7 @@ export function Descobertas() {
   }, [current, toggle]);
 
   useEffect(() => {
-    if (!current || exported) return;
+    if (!current || modalOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
       const target = event.target instanceof Element ? event.target : null;
@@ -191,12 +223,7 @@ export function Descobertas() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [current, decide, exported, toggleSound]);
-
-  const kept = useMemo(
-    () => (queue ?? []).filter((item) => decided[item.id] === "liked" || decided[item.id] === "saved"),
-    [queue, decided],
-  );
+  }, [current, decide, modalOpen, toggleSound]);
 
   /** As sugestões desta busca, nos mesmos eixos que você regulou. */
   const dots = useMemo<MapDot[]>(
@@ -214,9 +241,12 @@ export function Descobertas() {
   );
 
   const exportKept = async () => {
+    if (exportRef.current || kept.length === 0) return;
+    exportRef.current = true;
+    setExportHidden(false);
     setExported("running");
     try {
-      const response = await fetch("/api/spotify/export", {
+      const response = await privateFetch("/api/spotify/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tracks: kept.map((item) => ({ trackName: item.trackName, artistName: item.artistName })) }),
@@ -226,6 +256,8 @@ export function Descobertas() {
       setExported(payload.data as ExportResult);
     } catch (cause) {
       setExported({ error: cause instanceof Error ? cause.message : "A exportação falhou." });
+    } finally {
+      exportRef.current = false;
     }
   };
 
@@ -240,13 +272,32 @@ export function Descobertas() {
   };
 
   useEffect(() => {
-    if (!exported) return;
+    if (!modalOpen) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    const header = document.getElementById("arcadium-header");
+    const headerWasInert = header?.inert;
+    if (header) header.inert = true;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExported(null);
+      if (event.key === "Escape") { event.preventDefault(); setExportHidden(true); }
+      if (event.key !== "Tab") return;
+      const elements = dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]');
+      if (!elements?.length) { event.preventDefault(); dialogRef.current?.focus(); return; }
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialogRef.current)) { event.preventDefault(); first.focus(); }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [exported]);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (header) header.inert = headerWasInert ?? false;
+      document.removeEventListener("keydown", onKey);
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [modalOpen]);
 
   // ---------- onde o traço vai ----------
 
@@ -343,9 +394,10 @@ export function Descobertas() {
               eager
             />
             <div className={styles.caption}>
+              <a className={styles.mapLink} href="#mapa-descoberta">ajustar o mapa · {kept.length} separadas ↓</a>
               {current.albumName && <span className={styles.album}>{current.albumName}</span>}
               <span className={styles.meta}>
-                {[current.genre && genreLabel(current.genre), current.previewUrl ? null : "sem prévia"]
+                {[current.genre && genreLabel(current.genre), current.previewUrl ? "prévia de 30s" : "sem prévia"]
                   .filter(Boolean)
                   .join(" · ")}
                 {current.appleMusicUrl && (
@@ -361,19 +413,22 @@ export function Descobertas() {
           </div>
         </section>
         <Respostas>
+          <p className={styles.feedback} role={feedbackError || sound.error ? "alert" : "status"}>
+            {feedbackError || sound.error || (saving ? "Guardando tua resposta…" : "O que você separar fica na lista, mesmo se mudar o mapa.")}
+          </p>
           <Resposta onClick={toggleSound} disabled={!current.previewUrl} pressed={sound.playing} hint="espaço">
-            {sound.playing ? "para aí" : "toca aí"}
+            {sound.loading ? "carregando prévia…" : sound.playing ? "para aí" : "toca aí"}
           </Resposta>
-          <Resposta onClick={() => decide("liked")} hint="↑">
+          <Resposta onClick={() => void decide("liked")} hint="↑" disabled={saving || !selection.ready} primary>
             curti
           </Resposta>
-          <Resposta onClick={() => decide("saved")} hint="↓">
+          <Resposta onClick={() => void decide("saved")} hint="↓" disabled={saving || !selection.ready}>
             guardo pra depois
           </Resposta>
-          <Resposta onClick={() => decide("known")} hint="K">
+          <Resposta onClick={() => void decide("known")} hint="K" disabled={saving}>
             já conheço
           </Resposta>
-          <Resposta onClick={() => decide("skipped")} hint="→">
+          <Resposta onClick={() => void decide("skipped")} hint="→" disabled={saving}>
             pula
           </Resposta>
         </Respostas>
@@ -385,21 +440,23 @@ export function Descobertas() {
 
   return (
     <div ref={stageRef} className={styles.stage}>
+      <div inert={modalOpen}>
       {top}
 
-      <section className={styles.map} aria-label="Onde ele procura">
+      <section id="mapa-descoberta" className={styles.map} aria-label="Onde ele procura">
         <div>
           <h2 className={styles.mapTitle}>o mapa</h2>
           <p className={styles.mapNote}>
             Pra direita, mais perto do que você já ouve; pra cima, mais gente conhece. Arrasta a mira que eu procuro
             nesse canto.
           </p>
-          <Mapa proximity={proximity} fame={fame} dots={dots} busy={busy} onChange={move} onCommit={commit} />
+          <Mapa proximity={proximity} fame={fame} dots={dots} busy={busy || saving} onChange={move} onCommit={commit} />
           <ul className={styles.corners} aria-label="Cantos do mapa">
             {CORNERS.map((corner) => (
               <li key={corner.label}>
                 <button
                   type="button"
+                  disabled={busy || saving}
                   aria-pressed={corner.proximity === proximity && corner.fame === fame}
                   onClick={() => commit(corner.proximity, corner.fame)}
                 >
@@ -412,6 +469,10 @@ export function Descobertas() {
 
         <div>
           <h2 className={styles.mapTitle}>separadas</h2>
+          {exported && exportHidden && <p className={styles.quiet} role="status">
+            {exported === "running" ? "Levando tua lista pro Spotify… " : "A última exportação terminou. "}
+            <button type="button" className={styles.remove} onClick={() => setExportHidden(false)}>ver {exported === "running" ? "andamento" : "resultado"}</button>
+          </p>}
           {kept.length === 0 ? (
             <p className={styles.quiet}>O que você curtir ou guardar fica aqui, pra levar pro Spotify.</p>
           ) : (
@@ -422,7 +483,8 @@ export function Descobertas() {
                     <span className={styles.keptTrack}>
                       {item.trackName} <span className={styles.keptHow}>{item.artistName}</span>
                     </span>
-                    <span className={styles.keptHow}>{HOW[decided[item.id]]}</span>
+                    <span className={styles.keptHow}>{HOW[item.action]}</span>
+                    <button type="button" className={styles.remove} onClick={() => selection.remove(item)} aria-label={`Remover ${item.trackName} da lista`}>remover</button>
                   </li>
                 ))}
               </ol>
@@ -435,10 +497,11 @@ export function Descobertas() {
       </section>
 
       <PenLayer pen={pen} signal={signal} reduced={reduced} />
+      </div>
 
-      {exported && (
+      {modalOpen && createPortal(
         <div className={styles.overlay}>
-          <div role="dialog" aria-modal="true" aria-labelledby="levar-titulo" className={styles.dialog}>
+          <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="levar-titulo" className={styles.dialog}>
             <h2 id="levar-titulo">
               {exported === "running"
                 ? "Levando pro Spotify…"
@@ -458,10 +521,10 @@ export function Descobertas() {
             <Respostas inline label="Depois de levar">
               {result?.playlistUrl && <Resposta href={result.playlistUrl}>abrir no Spotify</Resposta>}
               {result?.m3uPayload && <Resposta onClick={() => downloadM3u(result)}>baixar .m3u</Resposta>}
-              <Resposta onClick={() => setExported(null)}>fechar</Resposta>
+              <Resposta onClick={() => setExportHidden(true)}>fechar</Resposta>
             </Respostas>
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );

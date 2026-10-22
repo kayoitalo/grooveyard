@@ -22,6 +22,28 @@ model User {
   feedbacks       RecommendationFeedback[]
   aiRuns          AIAnalysisRun[]
   playlistExports PlaylistExport[]
+  appSessions     AppSession[]
+}
+
+model AppSession {
+  tokenHash         String   @id
+  userId            String
+  credentialVersion String
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Shared across application instances: serverless restarts do not reset login limits.
+model AuthRateLimit {
+  key       String   @id
+  attempts  Int      @default(1)
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }
 
 model ProviderConnection {

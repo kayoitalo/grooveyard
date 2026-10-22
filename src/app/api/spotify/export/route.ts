@@ -1,3 +1,4 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { SpotifyService } from "@/modules/spotify/application/spotify-service";
@@ -7,6 +8,9 @@ import { isSpotifyAuthError } from "@/modules/spotify/domain/spotify-errors";
 const spotifyService = new SpotifyService();
 
 export async function POST(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
   try {
     const body = await request.json();
     const { tracks, customTitle } = body || {};
@@ -20,7 +24,7 @@ export async function POST(request: Request) {
 
     // O token vem da conexão guardada, nunca do cliente: um token de acesso
     // trafegando pelo corpo do POST é credencial exposta à toa.
-    const user = await prisma.user.findFirst();
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     const connection = user ? await getValidAccessToken(user.id) : null;
 
     const exportResult = await spotifyService.exportTracks(
@@ -33,7 +37,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: exportResult });
   } catch (error) {
     if (isSpotifyAuthError(error)) {
-      const user = await prisma.user.findFirst();
+      const user = await prisma.user.findUnique({ where: { id: userId } });
       if (user) await markNeedsReauth(user.id);
       return NextResponse.json(
         {

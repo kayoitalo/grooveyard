@@ -39,6 +39,11 @@
   max-width: clamp(220px, 30vw, 420px);
 }
 
+.mapLink { color: var(--tinta-2); font-size: 13px; text-underline-offset: 4px; }
+.feedback { flex-basis: 100%; margin: 0 0 2px; color: var(--tinta-2); font-size: 13px; line-height: 1.5; }
+.feedback[role="alert"] { color: var(--erro); }
+.remove { padding: 8px 0; border: 0; background: none; color: var(--tinta-2); font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
 .album {
   font-size: 13px;
   color: var(--tinta-2);
@@ -68,6 +73,7 @@
   row-gap: 36px;
   padding: 8vh 0 14vh;
   border-top: 1px solid var(--fio);
+  scroll-margin-top: var(--bar-h);
 }
 
 .mapTitle {
@@ -118,6 +124,8 @@
   text-decoration-color: currentColor;
 }
 
+.corners button:disabled { cursor: wait; }
+
 /* separadas: o que você marcou nesta pilha */
 .kept {
   margin: 0;
@@ -127,7 +135,7 @@
 
 .kept li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: baseline;
   padding: 10px 0;
@@ -171,6 +179,8 @@
   padding: clamp(24px, 4vw, 36px);
   border: 1px solid var(--fio-2);
   background: var(--papel);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
 }
 
 .dialog h2 {
@@ -199,6 +209,7 @@
 }
 
 @media (max-width: 760px) {
+  .feedback { grid-column: 1 / -1; }
   .block,
   .map {
     grid-template-columns: minmax(0, 1fr);

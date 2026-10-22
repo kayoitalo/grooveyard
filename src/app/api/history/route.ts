@@ -1,3 +1,4 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
@@ -29,13 +30,16 @@ async function hourHistogram(userId: string, timezone: string, search: string): 
 }
 
 export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
   try {
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const limit = Math.min(100, Math.max(10, parseInt(searchParams.get("limit") || "20", 10)));
     const search = searchParams.get("search") || "";
 
-    const user = await prisma.user.findFirst();
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return NextResponse.json({ events: [], totalPages: 0, totalItems: 0, page, hourHistogram: [], since: null });
     }

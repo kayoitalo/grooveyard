@@ -1,6 +1,7 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { verifyCronAuth } from "@/lib/security/cron-auth";
+
 import { AIAnalysisService } from "@/modules/ai-analysis/application/ai-analysis-service";
 import { logAi } from "@/modules/ai-analysis/application/ai-log";
 
@@ -14,13 +15,12 @@ export const maxDuration = 180;
  * de textos que mais precisar — um por execução, no ritmo de cada período.
  */
 export async function POST(request: Request) {
-  const auth = verifyCronAuth(request);
-  if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: 401 });
-  }
+  const access = await authorizeApi(request, true);
+  if (access.response) return access.response;
+  const userId = access.userId;
 
   try {
-    const user = await prisma.user.findFirst({ select: { id: true } });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const report = await new AIAnalysisService().refreshStalest(user.id);

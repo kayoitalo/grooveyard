@@ -9,6 +9,13 @@
   isolation: isolate;
 }
 
+.update, .updateError { padding: 16px 0; font-size: 14px; line-height: 1.5; color: var(--tinta-2); }
+.updateError { display: grid; justify-items: start; gap: 12px; color: var(--erro); }
+.hourDetails { margin-top: 14px; color: var(--tinta-2); font-size: 13px; }
+.hourDetails summary { cursor: pointer; padding: 8px 0; }
+.hourDetails dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.hourDetails dd { margin: 3px 0 0; color: var(--tinta-3); }
+
 .top {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);

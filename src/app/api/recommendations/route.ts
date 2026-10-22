@@ -1,3 +1,4 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { RecommendationService } from "@/modules/recommendations/application/recommendation-service";
@@ -6,8 +7,11 @@ import type { RecommendationMode, RecommendationContext } from "@/modules/recomm
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
   try {
-    const user = await prisma.user.findFirst();
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const service = new RecommendationService();
@@ -21,8 +25,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
   try {
-    const user = await prisma.user.findFirst();
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const body = await request.json();

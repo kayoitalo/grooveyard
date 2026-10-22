@@ -1,4 +1,6 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/db/prisma";
 import { completeConnection } from "@/modules/spotify/application/spotify-connection";
 import { STATE_COOKIE } from "../connect/route";
@@ -14,6 +16,9 @@ function back(request: Request, params: Record<string, string>) {
 }
 
 export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -23,19 +28,14 @@ export async function GET(request: Request) {
   if (!code || !state) return back(request, { spotify: "erro" });
 
   // o state precisa bater com o cookie criado no início do fluxo
-  const expected = request.headers
-    .get("cookie")
-    ?.split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${STATE_COOKIE}=`))
-    ?.split("=")[1];
+  const expected = (await cookies()).get(STATE_COOKIE)?.value;
 
-  if (!expected || expected !== state) {
+  if (!expected || expected !== `${userId}:${state}`) {
     return back(request, { spotify: "estado-invalido" });
   }
 
   try {
-    const user = await prisma.user.findFirst();
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return back(request, { spotify: "erro" });
 
     const displayName = await completeConnection(user.id, code);

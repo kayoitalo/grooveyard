@@ -1,5 +1,7 @@
 "use client";
 
+import { privateFetch } from "@/lib/http/private-fetch";
+
 import { useEffect, useState } from "react";
 import { pickFresh } from "@/components/ai/pick-fresh";
 import { Aviso } from "@/components/amigo/aviso";
@@ -13,12 +15,12 @@ import type { OverviewData, TasteShiftItem } from "@/modules/statistics/applicat
 type Window = "30d" | "1y";
 
 const WINDOWS: ReadonlyArray<{ key: Window; label: string }> = [
-  { key: "30d", label: "o último mês" },
+  { key: "30d", label: "os últimos 30 dias" },
   { key: "1y", label: "o último ano" },
 ];
 
-const BEFORE: Record<Window, string> = { "30d": "o mês anterior", "1y": "o ano anterior" };
-const IN_BEFORE: Record<Window, string> = { "30d": "no mês anterior", "1y": "no ano anterior" };
+const BEFORE: Record<Window, string> = { "30d": "os 30 dias anteriores", "1y": "o ano anterior" };
+const IN_BEFORE: Record<Window, string> = { "30d": "nos 30 dias anteriores", "1y": "no ano anterior" };
 
 type Shift = { rising: TasteShiftItem[]; declining: TasteShiftItem[] };
 
@@ -43,7 +45,7 @@ export default function OQueMudouPage() {
   useEffect(() => {
     const controller = new AbortController();
     setState({ status: "loading" });
-    fetch(`/api/overview?period=${period}`, { signal: controller.signal, cache: "no-store" })
+    privateFetch(`/api/overview?period=${period}`, { signal: controller.signal, cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`overview ${response.status}`);
         return response.json() as Promise<OverviewData>;
@@ -110,9 +112,9 @@ export default function OQueMudouPage() {
     return (
       <Aviso
         window={janela}
-        headline="Nada mudou de verdade."
-        narrative="Ou eu ainda não sei o gênero de quem você anda ouvindo: isso vai sendo preenchido aos poucos, sozinho."
-      />
+        headline="Ainda não achei uma mudança clara."
+        narrative="As diferenças podem ser pequenas, ou pode faltar informação de gênero. Ainda não dá pra concluir que teu gosto ficou igual."
+      ><Resposta href="/settings">ver informações dos artistas</Resposta></Aviso>
     );
   }
 

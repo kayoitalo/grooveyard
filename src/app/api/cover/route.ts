@@ -1,3 +1,4 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { NextResponse } from "next/server";
 
 /**
@@ -28,6 +29,8 @@ function isAllowed(url: URL): boolean {
 }
 
 export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
   const raw = new URL(request.url).searchParams.get("u");
   if (!raw) {
     return NextResponse.json({ error: "Missing 'u' parameter." }, { status: 400 });

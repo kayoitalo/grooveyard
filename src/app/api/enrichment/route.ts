@@ -1,3 +1,4 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { EnrichmentService } from "@/modules/enrichment/application/enrichment-service";
 import { NextResponse } from "next/server";
 
@@ -9,7 +10,9 @@ const enrichmentService = new EnrichmentService();
  */
 export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
   try {
     const coverage = await enrichmentService.getCoverageStats();
     return NextResponse.json({ success: true, data: coverage });
@@ -20,6 +23,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
   try {
     let batchSize = 5;
     let action: "all" | "covers" | "catalog" = "all";

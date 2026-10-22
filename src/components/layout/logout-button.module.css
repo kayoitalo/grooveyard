@@ -1,0 +1,31 @@
+.wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.button {
+  min-height: 44px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--tinta-3);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.button:hover { color: var(--tinta); }
+.button:disabled { opacity: 0.5; cursor: wait; }
+.error {
+  position: absolute;
+  right: 0;
+  width: 180px;
+  margin-top: 6px;
+  color: var(--erro);
+  background: var(--papel);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .wrap { position: absolute; top: 16px; right: var(--gutter); }
+}

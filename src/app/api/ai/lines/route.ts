@@ -1,3 +1,4 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { AIAnalysisService } from "@/modules/ai-analysis/application/ai-analysis-service";
@@ -14,6 +15,9 @@ const PERIODS: PeriodKey[] = ["7d", "30d", "1y", "all"];
  * gera é a Visão geral (na primeira visita) e o cron.
  */
 export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
   const params = new URL(request.url).searchParams;
   const screen = params.get("screen");
   const period = params.get("period");
@@ -26,7 +30,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const user = await prisma.user.findFirst({ select: { id: true } });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!user) return NextResponse.json({ lines: [], source: "fallback" });
 
     const service = new AIAnalysisService();

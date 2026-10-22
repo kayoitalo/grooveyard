@@ -32,6 +32,10 @@
   gap: 16px;
 }
 
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--tinta-2); font-size: 13px; line-height: 1.6; }
+.legendFrom { width: 10px; height: 10px; border: 1.5px solid var(--tinta-2); }
+.legendTo { width: 10px; height: 10px; background: var(--tinta-2); }
+
 .groupTitle {
   margin: 0;
   font-size: 12px;

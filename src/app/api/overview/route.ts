@@ -1,3 +1,4 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { createEmptyOverview, OverviewService, PeriodKey } from "@/modules/statistics/application/overview-service";
@@ -5,11 +6,14 @@ import { createEmptyOverview, OverviewService, PeriodKey } from "@/modules/stati
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
   try {
     const { searchParams } = new URL(request.url);
     const period = (searchParams.get("period") || "30d") as PeriodKey;
 
-    const user = await prisma.user.findFirst();
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return NextResponse.json(createEmptyOverview(period));
     }

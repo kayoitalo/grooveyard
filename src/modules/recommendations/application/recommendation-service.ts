@@ -185,7 +185,8 @@ export class RecommendationService {
     userId: string,
     itemId: string,
     feedbackType: FeedbackType,
-    note?: string
+    note?: string,
+    sessionId?: string,
   ): Promise<{ success: boolean }> {
 
     const item = await prisma.recommendationItem.findUnique({
@@ -193,7 +194,7 @@ export class RecommendationService {
       include: { session: true },
     });
 
-    if (!item || item.session.userId !== userId) {
+    if (!item || item.session.userId !== userId || (sessionId && item.sessionId !== sessionId)) {
       throw new Error("Recommendation item not found or unauthorized");
     }
 

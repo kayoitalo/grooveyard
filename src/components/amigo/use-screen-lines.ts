@@ -1,5 +1,7 @@
 "use client";
 
+import { privateFetch } from "@/lib/http/private-fetch";
+
 import { useEffect, useState } from "react";
 import type { ScreenKey } from "@/modules/ai-analysis/domain/ai-analysis.types";
 import type { PeriodKey } from "@/modules/statistics/application/overview-service";
@@ -17,7 +19,7 @@ export function useScreenLines(screen: ScreenKey, period?: PeriodKey): string[] 
     setLines(null);
     const query = new URLSearchParams({ screen });
     if (period) query.set("period", period);
-    fetch(`/api/ai/lines?${query}`, { signal: controller.signal })
+    privateFetch(`/api/ai/lines?${query}`, { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload: { lines?: Array<{ screen: string; line: string }>; source?: string } | null) => {
         const written = payload?.source === "ai" ? (payload.lines ?? []) : [];

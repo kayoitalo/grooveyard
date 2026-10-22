@@ -1,17 +1,21 @@
+import { authorizeApi } from "@/lib/security/api-auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { LastFmHistoryProvider } from "@/modules/listening/infrastructure/lastfm-adapter";
 import { ListeningSyncService } from "@/modules/listening/application/sync-service";
 import { z } from "zod";
 
-import { verifyCronAuth } from "@/lib/security/cron-auth";
+
 
 const syncRequestSchema = z.object({
   username: z.string().min(1, "Last.fm username is required"),
 });
 
-export async function GET() {
-  const user = await prisma.user.findFirst();
+export async function GET(request: Request) {
+  const access = await authorizeApi(request);
+  if (access.response) return access.response;
+  const userId = access.userId;
+  const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return NextResponse.json({ connection: null, latestRun: null });
   const connection = await prisma.providerConnection.findUnique({
     where: { userId_provider: { userId: user.id, provider: "lastfm" } },
@@ -23,10 +27,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = verifyCronAuth(request);
-  if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: 401 });
-  }
+  const access = await authorizeApi(request, true);
+  if (access.response) return access.response;
+  const userId = access.userId;
 
   try {
     const body = await request.json();
@@ -41,17 +44,8 @@ export async function POST(request: Request) {
 
     const { username } = parsed.data;
 
-    let user = await prisma.user.findFirst();
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: `${username.toLowerCase()}@arcadium.local`,
-          displayName: username,
-          timezone: "America/Sao_Paulo",
-        },
-      });
-    }
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return NextResponse.json({ error: "Conta não encontrada." }, { status: 404 });
 
     await prisma.providerConnection.upsert({
       where: {

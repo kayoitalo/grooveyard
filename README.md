@@ -74,14 +74,54 @@ pnpm install
 cp .env.example .env   # fill in DATABASE_URL, LASTFM_API_KEY and GEMINI_API_KEY
 pnpm db:deploy         # apply the Prisma migrations
 pnpm test
-pnpm dev               # http://localhost:3000
+node scripts/setup-auth.mjs # generate the personal login
+pnpm dev               # http://127.0.0.1:3000
 ```
+
+### Configure personal access
+
+Before starting the app, apply migrations and configure the owner account:
+
+```bash
+pnpm db:deploy
+node scripts/setup-auth.mjs
+```
+
+The setup command binds access to the existing account when there is exactly one
+user, preserving its listening history. With multiple users, set `AUTH_USER_ID`
+explicitly first. For an empty database, it creates the owner account. It generates
+a random password, prints it once for your password manager, and stores only its
+scrypt hash in `.env`. No public registration is available.
+
+Open `http://127.0.0.1:3000/login`. To rotate the password and invalidate all existing
+sessions, run `node scripts/setup-auth.mjs --reset`, then restart the application.
+
+For production, configure `AUTH_USER_ID`, `AUTH_PASSWORD_HASH` and `APP_ORIGIN`
+in the hosting environment before deployment. `APP_ORIGIN` must be the exact HTTPS
+origin, for example `https://your-app.vercel.app`; configure each preview separately.
+Use the same database account ID as the history you want to access. Apply the new
+database migration before running the new server. Never publish `.env` or the password.
+
 
 ---
 
 ## 🔒 Security & scheduling
 
-`POST /api/sync` serves two callers: the scheduler, which sends `CRON_SECRET`, and the "buscar agora" button, which runs in the browser and carries no secret. A browser request is authorized when it is same-origin (`Sec-Fetch-Site: same-origin` with a matching `Origin`), which a third-party page cannot forge.
+Private pages require a session, and each API handler checks authorization before
+reading data or calling providers. Browser mutations also require a matching
+`Origin`. Sessions expire after seven days, use HttpOnly / SameSite=Lax cookies
+(Secure in production), and store only token digests in PostgreSQL. Logout revokes
+the session server-side. Missing authentication configuration fails closed.
+
+Only `POST /api/sync` and `POST /api/ai/refresh` accept scheduler credentials via
+`CRON_SECRET`; they use the explicitly configured `AUTH_USER_ID`. The "buscar agora"
+button requires a signed-in session. There is no development or missing-secret
+bypass. Spotify OAuth is an optional provider connection, separate from app login.
+
+Login is limited to ten attempts per fixed fifteen-minute window in PostgreSQL,
+shared across server instances. This deliberately conservative personal-account
+limit can temporarily block legitimate login during an attack; it does not block
+existing sessions. Public multi-user registration and password recovery are deferred.
 
 Background sync runs hourly via GitHub Actions (`.github/workflows/scheduled-sync.yml`), using the `APP_URL`, `CRON_SECRET` and `LASTFM_USERNAME` repository secrets.
 

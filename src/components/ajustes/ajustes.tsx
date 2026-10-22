@@ -1,5 +1,7 @@
 "use client";
 
+import { privateFetch } from "@/lib/http/private-fetch";
+
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
@@ -94,7 +96,9 @@ function Numeros({ items }: { items: Array<[string, string]> }) {
  * ações como respostas — e o jeito de ele falar contigo como pergunta dele.
  */
 export function Ajustes() {
-  const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+  const busy = activeAction !== null;
+  const [loads, setLoads] = useState<Record<string, "loading" | "ready" | "error">>({ sync: "loading", coverage: "loading", spotify: "loading", preferences: "loading" });
   const [message, setMessage] = useState<{ text: string; kind?: "erro" } | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [coverage, setCoverage] = useState<EnrichmentCoverage | null>(null);
@@ -102,27 +106,31 @@ export function Ajustes() {
   const [addressAs, setAddressAs] = useState<AddressAs | null>(null);
   const searchParams = useSearchParams();
 
-  const loadJson = useCallback(async <T,>(url: string, apply: (payload: T) => void) => {
+  const loadJson = useCallback(async <T,>(url: string, apply: (payload: T) => void, key: string) => {
+    setLoads((current) => ({ ...current, [key]: "loading" }));
     try {
-      const response = await fetch(url, { cache: "no-store" });
-      if (response.ok) apply((await response.json()) as T);
+      const response = await privateFetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error("Falha ao consultar");
+      apply((await response.json()) as T);
+      setLoads((current) => ({ ...current, [key]: "ready" }));
     } catch (cause) {
+      setLoads((current) => ({ ...current, [key]: "error" }));
       console.error(`Failed to load ${url}`, cause);
     }
   }, []);
 
-  const loadSyncStatus = useCallback(() => loadJson<SyncStatus>("/api/sync", setSyncStatus), [loadJson]);
+  const loadSyncStatus = useCallback(() => loadJson<SyncStatus>("/api/sync", setSyncStatus, "sync"), [loadJson]);
   const loadCoverage = useCallback(
-    () => loadJson<{ data: EnrichmentCoverage }>("/api/enrichment", (payload) => setCoverage(payload.data)),
+    () => loadJson<{ data: EnrichmentCoverage }>("/api/enrichment", (payload) => setCoverage(payload.data), "coverage"),
     [loadJson],
   );
-  const loadSpotify = useCallback(() => loadJson<SpotifyStatus>("/api/spotify/connect", setSpotify), [loadJson]);
+  const loadSpotify = useCallback(() => loadJson<SpotifyStatus>("/api/spotify/connect", setSpotify, "spotify"), [loadJson]);
 
   useEffect(() => {
     void loadSyncStatus();
     void loadCoverage();
     void loadSpotify();
-    void loadJson<{ addressAs: AddressAs }>("/api/user/preferences", (payload) => setAddressAs(payload.addressAs));
+    void loadJson<{ addressAs: AddressAs }>("/api/user/preferences", (payload) => setAddressAs(payload.addressAs), "preferences");
   }, [loadCoverage, loadJson, loadSpotify, loadSyncStatus]);
 
   // o callback do Spotify devolve o resultado na barra de endereço
@@ -142,7 +150,7 @@ export function Ajustes() {
   const chooseAddress = (next: AddressAs) => {
     const previous = addressAs;
     setAddressAs(next);
-    void fetch("/api/user/preferences", {
+    void privateFetch("/api/user/preferences", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ addressAs: next }),
@@ -151,23 +159,27 @@ export function Ajustes() {
         setAddressAs(previous);
         setMessage({ text: "Não deu pra salvar o jeito de falar.", kind: "erro" });
       }
+    }).catch(() => {
+      setAddressAs(previous);
+      setMessage({ text: "A conexão falhou. Não consegui salvar o jeito de falar.", kind: "erro" });
     });
   };
 
-  const run = async (task: () => Promise<string>) => {
-    setBusy(true);
+  const run = async (action: string, task: () => Promise<string>) => {
+    if (busy) return;
+    setActiveAction(action);
     setMessage(null);
     try {
       setMessage({ text: await task() });
     } catch (cause) {
       setMessage({ text: cause instanceof Error ? cause.message : "Algo deu errado.", kind: "erro" });
     } finally {
-      setBusy(false);
+      setActiveAction(null);
     }
   };
 
   const post = async (url: string, body?: object) => {
-    const response = await fetch(url, {
+    const response = await privateFetch(url, {
       method: "POST",
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
@@ -180,25 +192,32 @@ export function Ajustes() {
   const {
     register,
     handleSubmit,
+    setValue,
+    getFieldState,
     formState: { errors, isValid },
   } = useForm<SyncForm>({ mode: "onChange" });
 
+  useEffect(() => {
+    const username = syncStatus?.connection?.username;
+    if (username && !getFieldState("username").isDirty) setValue("username", username, { shouldValidate: true });
+  }, [syncStatus?.connection?.username, setValue, getFieldState]);
+
   const onSubmit = (data: SyncForm) =>
-    run(async () => {
+    run("sync", async () => {
       const payload = await post("/api/sync", { username: data.username.trim() });
       await loadSyncStatus();
       return `Pronto: ${count(payload.sync.inserted)} audições novas.`;
     });
 
   const enrichArtists = () =>
-    run(async () => {
+    run("artists", async () => {
       const payload = await post("/api/enrichment");
       setCoverage(payload.data.coverage);
       return `Pronto: ${payload.data.summary.resolved} artistas e ${payload.data.summary.coversResolved} capas a mais.`;
     });
 
   const repairCovers = () =>
-    run(async () => {
+    run("covers", async () => {
       const payload = await post("/api/enrichment", { action: "covers", batchSize: 20 });
       setCoverage(payload.data.coverage);
       return `${payload.data.covers.resolved} capas novas encontradas.`;
@@ -206,7 +225,7 @@ export function Ajustes() {
 
   /** Duas chamadas por disco no ritmo da Apple: o lote é pequeno de propósito, um clique de cada vez. */
   const fetchCatalog = () =>
-    run(async () => {
+    run("catalog", async () => {
       const payload = await post("/api/enrichment", { action: "catalog", batchSize: 8 });
       setCoverage(payload.data.coverage);
       const { matched, missing, tracksUpdated } = payload.data.catalog;
@@ -219,21 +238,21 @@ export function Ajustes() {
    * e gera no máximo um pacote por clique, como o cron.
    */
   const writeTexts = () =>
-    run(async () => {
+    run("ai", async () => {
       const payload = await post("/api/ai/refresh");
       return describeRefresh(payload.report);
     });
 
   const connectSpotify = () =>
-    run(async () => {
+    run("connect", async () => {
       const payload = await post("/api/spotify/connect");
       window.location.href = payload.authorizeUrl;
       return "Abrindo o Spotify…";
     });
 
   const disconnectSpotify = () =>
-    run(async () => {
-      const response = await fetch("/api/spotify/connect", { method: "DELETE" });
+    run("disconnect", async () => {
+      const response = await privateFetch("/api/spotify/connect", { method: "DELETE" });
       if (!response.ok) throw new Error("Não deu pra desconectar.");
       await loadSpotify();
       return "Spotify desconectado.";
@@ -241,8 +260,8 @@ export function Ajustes() {
 
   const eraseEverything = () => {
     if (!confirm("Apagar todo o teu histórico? Isso não pode ser desfeito.")) return;
-    void run(async () => {
-      const response = await fetch("/api/user/data", { method: "DELETE" });
+    void run("erase", async () => {
+      const response = await privateFetch("/api/user/data", { method: "DELETE" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Não deu pra apagar os dados.");
       return payload.message;
@@ -252,6 +271,12 @@ export function Ajustes() {
   const connected = syncStatus?.connection;
   const syncError = syncStatus?.latestRun?.errorMessage;
   const sample = ADDRESS_OPTIONS.find((option) => option.value === addressAs)?.sample;
+  const actionLabels: Record<string, string> = {
+    sync: "Buscando novas audições no Last.fm…", artists: "Buscando informações dos artistas…",
+    covers: "Procurando as capas que faltam…", catalog: "Consultando os discos no catálogo…",
+    ai: "Escrevendo uma leitura nova. Pode levar até um minuto…", connect: "Abrindo o Spotify…",
+    disconnect: "Desconectando o Spotify…", erase: "Apagando teu histórico…",
+  };
 
   return (
     <div className={styles.page}>
@@ -262,15 +287,25 @@ export function Ajustes() {
         narrative="De onde vem cada número, o que fica guardado aqui e pra onde as descobertas podem ir."
       />
 
-      {message && (
-        <p role={message.kind === "erro" ? "alert" : "status"} className={styles.status} data-kind={message.kind}>
-          {message.text}
+      {(message || activeAction) && (
+        <p role={message?.kind === "erro" ? "alert" : "status"} className={styles.status} data-kind={message?.kind}>
+          {activeAction ? actionLabels[activeAction] : message?.text}
         </p>
+      )}
+
+      {Object.values(loads).includes("error") && (
+        <div className={styles.loadError} role="alert">
+          <p>Não consegui consultar todos os ajustes. Isso não quer dizer que as conexões foram desfeitas.</p>
+          <Resposta onClick={() => {
+            void loadSyncStatus(); void loadCoverage(); void loadSpotify();
+            void loadJson<{ addressAs: AddressAs }>("/api/user/preferences", (payload) => setAddressAs(payload.addressAs), "preferences");
+          }}>tentar carregar de novo</Resposta>
+        </div>
       )}
 
       <Secao
         title="o teu Last.fm"
-        state={syncError ? "a última busca falhou" : connected ? connected.username : "não conectado"}
+        state={loads.sync === "loading" ? "consultando…" : loads.sync === "error" ? "não consegui consultar" : syncError ? "a última busca falhou" : connected ? connected.username : "não conectado"}
         stateKind={syncError ? "erro" : undefined}
       >
         <p className={styles.hint}>De onde vem o teu histórico. A busca roda sozinha de hora em hora, mas dá pra forçar agora.</p>
@@ -282,7 +317,7 @@ export function Ajustes() {
           </label>
           <Respostas inline label="Last.fm">
             <Resposta submit disabled={busy || !isValid}>
-              {busy ? "buscando…" : "buscar agora"}
+              {activeAction === "sync" ? "buscando…" : "buscar agora"}
             </Resposta>
           </Respostas>
         </form>
@@ -317,10 +352,10 @@ export function Ajustes() {
         </p>
         <Respostas inline label="Artistas e capas">
           <Resposta onClick={enrichArtists} disabled={busy}>
-            buscar artistas
+            {activeAction === "artists" ? "buscando artistas…" : "buscar artistas"}
           </Resposta>
           <Resposta onClick={repairCovers} disabled={busy}>
-            procurar capas
+            {activeAction === "covers" ? "procurando capas…" : "procurar capas"}
           </Resposta>
         </Respostas>
         {coverage && (
@@ -345,7 +380,7 @@ export function Ajustes() {
         </p>
         <Respostas inline label="Catálogo">
           <Resposta onClick={fetchCatalog} disabled={busy}>
-            consultar catálogo
+            {activeAction === "catalog" ? "consultando…" : "consultar catálogo"}
           </Resposta>
         </Respostas>
         {coverage && (
@@ -366,7 +401,7 @@ export function Ajustes() {
         </p>
         <Respostas inline label="Leituras">
           <Resposta onClick={writeTexts} disabled={busy}>
-            escreve agora
+            {activeAction === "ai" ? "escrevendo…" : "escreve agora"}
           </Resposta>
         </Respostas>
         <p className={styles.small}>
@@ -374,7 +409,7 @@ export function Ajustes() {
         </p>
       </Secao>
 
-      <Secao title="playlists" state={spotify?.connected ? `Spotify · ${spotify.displayName}` : "não conectado"}>
+      <Secao title="playlists" state={loads.spotify === "loading" ? "consultando…" : loads.spotify === "error" ? "não consegui consultar" : spotify?.connected ? `Spotify · ${spotify.displayName}` : "não conectado"}>
         <p className={styles.hint}>
           O que você separar em “pra ouvir depois” pode virar playlist. Conectado, ela nasce direto na tua conta; sem
           conectar, você leva links e um arquivo .m3u.
